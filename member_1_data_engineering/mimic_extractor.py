@@ -1,176 +1,172 @@
 """
-Data Engineering Pipeline: MIMIC-IV Blood Demand Extractor
-===========================================================
-Member 1 — Data Engineering Lead
+MIMIC-IV Blood Demand Extractor
+=================================
+Member 1 -- Data Engineering Lead
 
-Responsibility:
-    Convert raw MIMIC-IV clinical transfusion events into a clean,
-    analysis-ready daily time-series suitable for the Hybrid GRU-LightGBM model.
+Extracts real-world blood transfusion events from the MIMIC-IV clinical
+database and produces a clean, analysis-ready daily time-series CSV.
 
 Data Source:
     MIMIC-IV (Medical Information Mart for Intensive Care IV)
-    Beth Israel Deaconess Medical Center — PhysioNet
+    Beth Israel Deaconess Medical Center -- PhysioNet
     Access: https://physionet.org/content/mimiciv/
+    Citation: Johnson AEW et al. (2023). Scientific Data, 10(1), 1.
 
-Reference:
-    Johnson, A. et al. (2023). MIMIC-IV, a freely accessible electronic health
-    record dataset. Scientific Data, 10(1), 1.
-
-Pipeline:
-    1. Load inputevents.csv from MIMIC-IV ICU module.
-    2. Filter for blood product ITEMIDs (verified against d_items table).
-    3. Normalise amounts (mL → units, 1 unit ≈ 300 mL for PRBC).
-    4. Aggregate to daily totals per product type.
-    5. Join with calendar features (day-of-week, holidays, seasonal flags).
-    6. Output a clean CSV for model training.
+Output columns (defined in shared/config/columns.py):
+    date, prbc_units, ffp_units, platelet_units, cryo_units, total_units,
+    day_of_week, is_weekend, month, quarter, day_of_year, week_of_year,
+    is_holiday_us
 
 Usage:
-    python -m backend.data_generation.mimic_extractor
+    python mimic_extractor.py
 """
 
+from __future__ import annotations
+
 import logging
+import sys
 from pathlib import Path
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # MIMIC-IV blood product ITEMIDs
-# Verified from MIMIC-IV d_items table (carevue + metavision)
-# Reference: https://mimic.mit.edu/docs/iv/modules/icu/inputevents/
+# Source: MIMIC-IV d_items table (verified against metavision)
+# https://mimic.mit.edu/docs/iv/modules/icu/inputevents/
 # ---------------------------------------------------------------------------
 BLOOD_ITEM_IDS: dict[int, str] = {
     225168: "Packed Red Blood Cells",
     220996: "Fresh Frozen Plasma",
     225170: "Platelets",
     225171: "Cryoprecipitate",
-    226368: "OR Packed RBC Intake",   # Operating-room variant
-    226370: "OR FFP Intake",
-    226372: "OR Platelets Intake",
+    226368: "Packed Red Blood Cells",   # OR variant
+    226370: "Fresh Frozen Plasma",      # OR variant
+    226372: "Platelets",               # OR variant
 }
 
-# Approximate mL per clinical unit (standard transfusion medicine reference)
+# mL per clinical unit (AABB Technical Manual, 20th Edition)
 ML_PER_UNIT: dict[str, float] = {
-    "Packed Red Blood Cells":  300.0,
-    "OR Packed RBC Intake":    300.0,
-    "Fresh Frozen Plasma":     250.0,
-    "OR FFP Intake":           250.0,
-    "Platelets":               300.0,
-    "OR Platelets Intake":     300.0,
-    "Cryoprecipitate":          15.0,
+    "Packed Red Blood Cells": 300.0,
+    "Fresh Frozen Plasma":    250.0,
+    "Platelets":              300.0,
+    "Cryoprecipitate":         15.0,
 }
 
-# Canonical output column names (used by downstream hybrid model)
-OUTPUT_COLUMNS = [
-    "date",
-    "prbc_units",        # Packed Red Blood Cells
-    "ffp_units",         # Fresh Frozen Plasma
-    "platelet_units",    # Platelets
-    "cryo_units",        # Cryoprecipitate
-    "total_units",       # Sum across all products
-    "day_of_week",       # 0 = Monday … 6 = Sunday
-    "is_weekend",
-    "month",
-    "quarter",
-    "day_of_year",
-    "week_of_year",
-    "is_holiday_us",     # US federal holidays (approximate, can localise)
-]
-
-PRODUCT_TO_COLUMN = {
+# MIMIC product name -> output column name (must match shared/config/columns.py)
+PRODUCT_TO_COLUMN: dict[str, str] = {
     "Packed Red Blood Cells": "prbc_units",
-    "OR Packed RBC Intake":   "prbc_units",
     "Fresh Frozen Plasma":    "ffp_units",
-    "OR FFP Intake":          "ffp_units",
     "Platelets":              "platelet_units",
-    "OR Platelets Intake":    "platelet_units",
     "Cryoprecipitate":        "cryo_units",
+}
+
+# Approximate US federal holidays (month, day) as a proxy
+# TODO: replace with Indian public holidays for production deployment
+_US_HOLIDAYS: set[tuple[int, int]] = {
+    (1, 1), (1, 15), (2, 19), (5, 27), (7, 4),
+    (9, 2), (11, 11), (11, 28), (12, 25), (12, 31),
 }
 
 
 # ---------------------------------------------------------------------------
-# Step 1 — Raw extraction
+# Step 1 -- Raw extraction (chunked for memory efficiency)
 # ---------------------------------------------------------------------------
 
 def load_inputevents(path: Path, chunksize: int = 500_000) -> pd.DataFrame:
     """
-    Load MIMIC-IV inputevents, keeping only relevant columns and rows.
-
-    Uses chunked reading to handle the ~3GB raw file without OOM errors
-    on a standard laptop.
+    Load MIMIC-IV inputevents.csv filtering only blood product rows.
+    Uses chunked reading to handle the ~3 GB file on 8 GB RAM machines.
     """
-    logger.info("Loading MIMIC-IV inputevents from %s ...", path)
+    required_cols = ["subject_id", "hadm_id", "starttime", "itemid", "amount", "amountuom"]
 
+    logger.info("Loading MIMIC-IV inputevents from %s ...", path)
     chunks = []
-    reader = pd.read_csv(
-        path,
-        usecols=["subject_id", "hadm_id", "starttime", "itemid", "amount", "amountuom"],
-        chunksize=chunksize,
-        low_memory=False,
-    )
+
+    try:
+        reader = pd.read_csv(
+            path,
+            usecols=required_cols,
+            chunksize=chunksize,
+            low_memory=False,
+        )
+    except ValueError as e:
+        raise ValueError(
+            f"inputevents.csv is missing expected columns. "
+            f"Ensure you are using the MIMIC-IV ICU module (not MIMIC-III). "
+            f"Original error: {e}"
+        ) from e
 
     for i, chunk in enumerate(reader):
         filtered = chunk[chunk["itemid"].isin(BLOOD_ITEM_IDS.keys())]
         if not filtered.empty:
             chunks.append(filtered)
-        if (i + 1) % 10 == 0:
+        if (i + 1) % 20 == 0:
             logger.debug("Processed %d chunks...", i + 1)
 
     if not chunks:
         raise ValueError(
-            "No blood transfusion events found. "
-            "Check that the correct MIMIC-IV inputevents.csv is provided."
+            "No blood transfusion events found in inputevents.csv. "
+            "Verify that BLOOD_ITEM_IDS match your MIMIC-IV version's d_items table."
         )
 
     df = pd.concat(chunks, ignore_index=True)
-    logger.info("Extracted %d raw blood transfusion events.", len(df))
+    logger.info("Extracted %d raw transfusion events.", len(df))
     return df
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — Normalise and filter
+# Step 2 -- Normalise to clinical units
 # ---------------------------------------------------------------------------
 
 def normalise_to_units(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normalise raw mL amounts to clinical units.
-    Drops rows with zero or negative amounts.
+    Convert mL amounts to clinical units and map to output column names.
+    Drops rows where amountuom is not mL (logged as a warning).
     """
     df = df.copy()
     df["blood_product"] = df["itemid"].map(BLOOD_ITEM_IDS)
     df["ml_per_unit"]   = df["blood_product"].map(ML_PER_UNIT)
+    df["output_col"]    = df["blood_product"].map(PRODUCT_TO_COLUMN)
 
-    # Only keep rows where amount is in mL; flag for manual review if uom != 'mL'
-    df_ml = df[df["amountuom"].str.lower().isin(["ml", "milliliters"])].copy()
-    df_unit = df[~df["amountuom"].str.lower().isin(["ml", "milliliters"])].copy()
-    if not df_unit.empty:
+    # Split mL vs non-mL
+    is_ml = df["amountuom"].str.lower().isin(["ml", "milliliters", "milliliter"])
+    df_ml   = df[is_ml].copy()
+    df_other = df[~is_ml]
+
+    if not df_other.empty:
         logger.warning(
-            "%d rows with non-mL units dropped (review amountuom field).", len(df_unit)
+            "%d rows dropped: non-mL amountuom values %s",
+            len(df_other),
+            df_other["amountuom"].unique().tolist()[:5],
         )
 
     df_ml["units_used"] = df_ml["amount"] / df_ml["ml_per_unit"]
-    df_ml = df_ml[df_ml["units_used"] > 0]
-    df_ml["output_col"] = df_ml["blood_product"].map(PRODUCT_TO_COLUMN)
 
-    logger.info("Normalised %d events to clinical units.", len(df_ml))
+    # Remove zero/negative amounts (data quality)
+    before = len(df_ml)
+    df_ml = df_ml[df_ml["units_used"] > 0].copy()
+    logger.info(
+        "Normalised %d events to clinical units (%d dropped as zero/negative).",
+        len(df_ml), before - len(df_ml),
+    )
     return df_ml
 
 
 # ---------------------------------------------------------------------------
-# Step 3 — Daily aggregation
+# Step 3 -- Daily aggregation
 # ---------------------------------------------------------------------------
 
 def aggregate_daily(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Aggregate individual transfusion events into a daily time-series
-    with one row per date.
+    Group transfusion events by calendar day and output column.
+    Fills missing calendar days with zero (no demand = 0 units, not NaN).
     """
     df = df.copy()
-    df["date"] = pd.to_datetime(df["starttime"]).dt.date
+    df["date"] = pd.to_datetime(df["starttime"]).dt.normalize()  # midnight
 
-    # Pivot: sum units per output column per day
     daily = (
         df.groupby(["date", "output_col"])["units_used"]
         .sum()
@@ -178,9 +174,10 @@ def aggregate_daily(df: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
 
-    # Ensure all product columns present (hospital may never use some products)
+    # Ensure all product columns exist even if never recorded
     for col in ["prbc_units", "ffp_units", "platelet_units", "cryo_units"]:
         if col not in daily.columns:
+            logger.warning("Column %s absent from data -- filling with 0.", col)
             daily[col] = 0.0
 
     daily["total_units"] = (
@@ -188,51 +185,94 @@ def aggregate_daily(df: pd.DataFrame) -> pd.DataFrame:
         daily["platelet_units"] + daily["cryo_units"]
     )
 
-    # Enforce chronological order and fill any missing calendar days
-    daily["date"] = pd.to_datetime(daily["date"])
+    # Fill complete calendar range (no gaps)
     daily.sort_values("date", inplace=True)
-
     full_range = pd.date_range(daily["date"].min(), daily["date"].max(), freq="D")
-    daily = daily.set_index("date").reindex(full_range, fill_value=0.0)
-    daily.index.name = "date"
-    daily.reset_index(inplace=True)
+    daily = (
+        daily.set_index("date")
+        .reindex(full_range, fill_value=0.0)
+        .rename_axis("date")
+        .reset_index()
+    )
+
+    # Recalculate total_units after reindex (fill_value may overwrite it)
+    daily["total_units"] = (
+        daily["prbc_units"] + daily["ffp_units"] +
+        daily["platelet_units"] + daily["cryo_units"]
+    )
 
     logger.info(
-        "Aggregated %d days of blood demand (from %s to %s).",
-        len(daily), daily["date"].min().date(), daily["date"].max().date()
+        "Daily aggregation: %d days (%s to %s).",
+        len(daily),
+        daily["date"].min().date(),
+        daily["date"].max().date(),
     )
     return daily
 
 
 # ---------------------------------------------------------------------------
-# Step 4 — Calendar feature engineering
+# Step 4 -- Calendar feature engineering
 # ---------------------------------------------------------------------------
 
 def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Append temporal features required by the GRU and LightGBM models.
-
-    Note: Holiday calendar uses approximate US federal holidays as proxy.
-    Replace with India/local holidays for production deployment.
+    Add temporal features consumed by Member 2's GRU and LightGBM models.
+    Column names must match shared/config/columns.py::CALENDAR_COLS exactly.
     """
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
 
-    df["day_of_week"]  = df["date"].dt.dayofweek          # 0 = Mon
+    df["day_of_week"]  = df["date"].dt.dayofweek              # 0=Monday
     df["is_weekend"]   = (df["date"].dt.dayofweek >= 5).astype(int)
     df["month"]        = df["date"].dt.month
     df["quarter"]      = df["date"].dt.quarter
     df["day_of_year"]  = df["date"].dt.dayofyear
     df["week_of_year"] = df["date"].dt.isocalendar().week.astype(int)
-
-    # Approximate major US holidays (month, day) as binary flag
-    # TODO: replace with Indian public holidays via pandas-holiday or a CSV
-    US_HOLIDAYS = {(1,1),(7,4),(11,11),(12,25),(12,31),(1,15),(2,19),(5,27),(9,2),(11,28)}
     df["is_holiday_us"] = df["date"].apply(
-        lambda d: int((d.month, d.day) in US_HOLIDAYS)
+        lambda d: int((d.month, d.day) in _US_HOLIDAYS)
     )
-
     return df
+
+
+# ---------------------------------------------------------------------------
+# Step 5 -- Output validation
+# ---------------------------------------------------------------------------
+
+def validate_output(df: pd.DataFrame) -> None:
+    """
+    Verify the extraction output satisfies the shared column contract.
+    Raises ValueError if any required column is missing or has invalid dtype.
+    """
+    from pathlib import Path as _Path
+    import sys as _sys
+    # Inline required columns to avoid import path issues
+    required = [
+        "date", "prbc_units", "ffp_units", "platelet_units", "cryo_units",
+        "total_units", "day_of_week", "is_weekend", "month", "quarter",
+        "day_of_year", "week_of_year", "is_holiday_us",
+    ]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Output is missing required columns: {missing}")
+
+    # Numeric sanity checks
+    for col in ["prbc_units", "ffp_units", "platelet_units", "cryo_units", "total_units"]:
+        if (df[col] < 0).any():
+            raise ValueError(f"Negative values found in column '{col}'.")
+
+    # total_units must equal sum of products
+    recomputed = df["prbc_units"] + df["ffp_units"] + df["platelet_units"] + df["cryo_units"]
+    if not np.allclose(df["total_units"], recomputed, atol=0.01):
+        raise ValueError("total_units does not equal sum of product columns.")
+
+    # No missing dates (full calendar range)
+    date_range = pd.date_range(df["date"].min(), df["date"].max(), freq="D")
+    if len(df) != len(date_range):
+        raise ValueError(
+            f"Date gaps detected: expected {len(date_range)} days, got {len(df)}."
+        )
+
+    logger.info("Output validation passed: %d rows, %d cols.", len(df), len(df.columns))
 
 
 # ---------------------------------------------------------------------------
@@ -245,24 +285,34 @@ def extract_daily_demand(
     chunksize: int = 500_000,
 ) -> pd.DataFrame:
     """
-    Full extraction pipeline: raw MIMIC-IV → clean daily demand CSV.
+    Full extraction pipeline: MIMIC-IV inputevents.csv -> clean daily demand CSV.
 
     Args:
         inputevents_path: Path to MIMIC-IV icu/inputevents.csv
-        output_path: Where to write the processed demand CSV
-        chunksize: Rows per chunk for memory-efficient loading
+        output_path:      Destination CSV (e.g. data/mimic_real_demand.csv)
+        chunksize:        Rows per read chunk (tune for available RAM)
 
     Returns:
-        Clean DataFrame with calendar features ready for model training.
+        Validated DataFrame ready for feature_engineering.py
     """
-    df_raw  = load_inputevents(inputevents_path, chunksize=chunksize)
-    df_norm = normalise_to_units(df_raw)
-    df_day  = aggregate_daily(df_norm)
-    df_feat = add_calendar_features(df_day)
+    df_raw   = load_inputevents(inputevents_path, chunksize)
+    df_norm  = normalise_to_units(df_raw)
+    df_day   = aggregate_daily(df_norm)
+    df_feat  = add_calendar_features(df_day)
+
+    # Enforce column order from shared contract
+    col_order = [
+        "date", "prbc_units", "ffp_units", "platelet_units", "cryo_units",
+        "total_units", "day_of_week", "is_weekend", "month", "quarter",
+        "day_of_year", "week_of_year", "is_holiday_us",
+    ]
+    df_feat = df_feat[col_order]
+
+    validate_output(df_feat)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df_feat.to_csv(output_path, index=False)
-    logger.info("Saved processed demand dataset → %s", output_path)
+    logger.info("Saved validated demand dataset -> %s", output_path)
     return df_feat
 
 
@@ -271,21 +321,28 @@ def extract_daily_demand(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import sys
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stdout,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
 
-    INPUT  = Path("datasets/mimic_iv/icu/inputevents.csv")
-    OUTPUT = Path("datasets/demand/mimic_real_demand.csv")
+    INPUT  = Path("data/raw/inputevents.csv")
+    OUTPUT = Path("data/mimic_real_demand.csv")
 
     if not INPUT.exists():
         print(
-            f"\n[!] File not found: {INPUT}\n"
-            "    Please download MIMIC-IV from PhysioNet and place\n"
-            "    inputevents.csv at the path above.\n"
-            "    Access: https://physionet.org/content/mimiciv/\n"
+            f"\n[!] File not found: {INPUT}\n\n"
+            "    To use real MIMIC-IV data:\n"
+            "    1. Complete training at https://physionet.org/\n"
+            "    2. Sign the MIMIC-IV Data Use Agreement\n"
+            "    3. Download inputevents.csv from the ICU module\n"
+            "    4. Place it at: member_1_data_engineering/data/raw/inputevents.csv\n"
         )
         sys.exit(1)
 
     result = extract_daily_demand(INPUT, OUTPUT)
-    print(f"\n Extraction complete — {len(result)} days written to {OUTPUT}")
-    print(result.tail())
+    print(f"\n[OK] Extraction complete: {len(result)} days -> {OUTPUT}")
+    print(f"     Date range : {result['date'].min().date()} to {result['date'].max().date()}")
+    print(f"     Avg daily total units: {result['total_units'].mean():.1f}")
+    print(f"\n     Next step: python feature_engineering.py")
