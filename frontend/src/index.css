@@ -1,0 +1,25 @@
+/* BloodIQ Dashboard — Base Styles */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #0a0f1a;
+  --bg-card: #111827;
+  --bg-card-border: #1f2d3d;
+  --accent-red: #e53e3e;
+  --accent-red-light: #fc8181;
+  --accent-blue: #3b82f6;
+  --accent-green: #10b981;
+  --accent-yellow: #f59e0b;
+  --text-primary: #f9fafb;
+  --text-muted: #9ca3af;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+#root { width: 100%; }
