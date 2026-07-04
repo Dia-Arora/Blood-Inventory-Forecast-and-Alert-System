@@ -6,21 +6,29 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 .env
 *.egg-info/
 dist/
 build/
 
-# Trained models & large data files (NOT to be committed)
+# Trained model artifacts (run locally, do not commit)
 backend/trained_models/
+member_2_ml_models/models/
+member_2_ml_models/outputs/
+
+# Database
+*.db
+*.sqlite3
+
+# Raw and processed datasets (too large for git; use PhysioNet / DVC)
 backend/datasets/mimic_iv/
-backend/blood_inventory.db
+backend/datasets/demand/
+backend/datasets/supply/
+member_1_data_engineering/data/
+member_2_ml_models/data/
 
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
-
-# Node / Frontend
+# Frontend build
 node_modules/
 frontend/dist/
 frontend/.next/
@@ -33,6 +41,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+*.swp
 
-# Misc
+# Logs
 *.log

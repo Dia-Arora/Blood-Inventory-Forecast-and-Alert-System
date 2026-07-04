@@ -156,5 +156,5 @@ if __name__ == "__main__":
         print(f"[!] Run mimic_extractor.py first to generate {INPUT_PATH}")
         sys.exit(1)
     result = build_features()
-    print(f"\n✓ Feature engineering complete — {len(result)} rows, {len(result.columns)} features")
+    print(f"\n Feature engineering complete — {len(result)} rows, {len(result.columns)} features")
     print(f"   Columns: {result.columns.tolist()}")

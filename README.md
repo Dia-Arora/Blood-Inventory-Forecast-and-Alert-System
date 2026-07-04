@@ -5,7 +5,7 @@
 
 ---
 
-## 🏗️ Project Architecture
+##  Project Architecture
 
 ```
 Blood-Inventory-Forecast-and-Alert-System/
@@ -31,7 +31,7 @@ Blood-Inventory-Forecast-and-Alert-System/
 
 ---
 
-## 🔬 Methodology
+##  Methodology
 
 ### Data Source
 Real-world clinical transfusion data extracted from **MIMIC-IV** (Medical Information Mart for Intensive Care IV), the de-identified, publicly available database from Beth Israel Deaconess Medical Center. We aggregate daily blood product demand from raw patient-level `inputevents`.
@@ -50,7 +50,7 @@ We propose a **Hybrid GRU-LightGBM Digital Twin** architecture:
 
 ---
 
-## 👥 Team & Responsibilities
+##  Team & Responsibilities
 
 | Member | Role | Focus |
 |--------|------|-------|
@@ -63,7 +63,7 @@ Detailed role breakdown: [`docs/BloodIQ_Team_Project_Plan.pdf`](docs/BloodIQ_Tea
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ```bash
 # Install all dependencies
@@ -78,7 +78,7 @@ cd frontend && npm install && npm run dev
 
 ---
 
-## ⚠️ Data Access
+##  Data Access
 
 This project uses MIMIC-IV. To access the dataset:
 1. Complete the required training at https://physionet.org/

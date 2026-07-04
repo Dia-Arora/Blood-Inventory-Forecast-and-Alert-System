@@ -287,5 +287,5 @@ if __name__ == "__main__":
         sys.exit(1)
 
     result = extract_daily_demand(INPUT, OUTPUT)
-    print(f"\n✓ Extraction complete — {len(result)} days written to {OUTPUT}")
+    print(f"\n Extraction complete — {len(result)} days written to {OUTPUT}")
     print(result.tail())
