@@ -37,6 +37,7 @@ const generateInventoryData = () => BLOOD_GROUPS.map(bg => {
   return { group: bg, stock, daysCover, usage, status, expiring7d: Math.floor(Math.random() * (stock * 0.15)) };
 });
 
+
 const INITIAL_ALERTS = [
   { id: 1, severity: 'critical', type: 'shortage', group: 'O-', message: 'O- reserve below 2 days coverage. Central transport en route.', timestamp: '10 mins ago' },
   { id: 2, severity: 'warning', type: 'expiry', group: 'AB+', message: '12 units expiring within 48h. Recommended for elective surgeries.', timestamp: '1 hr ago' },
@@ -68,6 +69,7 @@ const TreemapContent = (props) => {
   return null;
 };
 
+
 export default function Dashboard() {
   const [selectedHospital, setSelectedHospital] = useState(HOSPITALS[0]);
   const [selectedBloodGroup, setSelectedBloodGroup] = useState('O-');
@@ -78,8 +80,86 @@ export default function Dashboard() {
   const [heatmapData, setHeatmapData] = useState([]);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  const refreshData = () => { setForecastData(generateForecastData()); setInventoryData(generateInventoryData()); setHeatmapData(generateHeatmapData()); setLastRefresh(new Date()); };
-  useEffect(() => { refreshData(); const iv = setInterval(refreshData, 60000); return () => clearInterval(iv); }, [selectedHospital, selectedBloodGroup]);
+  const [rawDemandData, setRawDemandData] = useState([]);
+
+  const refreshData = async () => {
+    try {
+      const demandRes = await fetch('http://localhost:8000/api/forecast/demand');
+      const supplyRes = await fetch('http://localhost:8000/api/forecast/supply');
+      
+      if (demandRes.ok && supplyRes.ok) {
+        const demandJson = await demandRes.json();
+        const supplyJson = await supplyRes.json();
+        
+        if (demandJson.status === 'success' && demandJson.data) {
+           setRawDemandData(demandJson.data);
+        }
+
+        if (supplyJson.status === 'success' && supplyJson.data) {
+           const sData = supplyJson.data;
+           const invData = BLOOD_GROUPS.map(bg => {
+              const baseGroup = bg.replace('+', '').replace('-', '');
+              const preds = sData[baseGroup] || [];
+              const rawStock = preds.length > 0 ? preds[0].predicted_supply : 100;
+              const currentStock = Math.floor(bg.includes('+') ? rawStock * 0.8 : rawStock * 0.2); 
+              
+              let status = 'safe';
+              const daysCover = currentStock / 20; 
+              if (daysCover <= 3) status = 'critical';
+              else if (daysCover <= 7) status = 'warning';
+              
+              return {
+                group: bg,
+                stock: currentStock,
+                daysCover: parseFloat(daysCover.toFixed(1)),
+                usage: 20,
+                status: status,
+                expiring7d: Math.floor(currentStock * 0.1)
+              };
+           });
+           setInventoryData(invData);
+        }
+      }
+      setHeatmapData(generateHeatmapData());
+      setLastRefresh(new Date());
+    } catch (e) {
+      console.log("Backend offline, using fallback");
+      setRawDemandData([]);
+      setForecastData(generateForecastData());
+      setInventoryData(generateInventoryData());
+      setHeatmapData(generateHeatmapData());
+      setLastRefresh(new Date());
+    }
+  };
+
+  useEffect(() => {
+    if (!rawDemandData || rawDemandData.length === 0) return;
+    
+    let multiplier = 0.12; 
+    if (selectedBloodGroup.includes('O+')) multiplier = 0.38;
+    else if (selectedBloodGroup.includes('O-')) multiplier = 0.07;
+    else if (selectedBloodGroup.includes('A+')) multiplier = 0.34;
+    else if (selectedBloodGroup.includes('A-')) multiplier = 0.06;
+    else if (selectedBloodGroup.includes('B+')) multiplier = 0.09;
+    else if (selectedBloodGroup.includes('B-')) multiplier = 0.02;
+    else if (selectedBloodGroup.includes('AB+')) multiplier = 0.03;
+    else if (selectedBloodGroup.includes('AB-')) multiplier = 0.01;
+
+    const fData = rawDemandData.map((d, i) => {
+       const dateObj = new Date(d.date);
+       const scaledDemand = Math.floor(d.predicted_demand * multiplier);
+       return {
+          date: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          actual: i < 14 ? scaledDemand : null,
+          predicted: i >= 14 ? scaledDemand : null,
+          lower: i >= 14 ? Math.floor(scaledDemand * 0.8) : null,
+          upper: i >= 14 ? Math.floor(scaledDemand * 1.2) : null
+       };
+    });
+    setForecastData(fData); 
+  }, [rawDemandData, selectedBloodGroup]);
+  
+  useEffect(() => { refreshData(); const iv = setInterval(refreshData, 60000); return () => clearInterval(iv); }, [selectedHospital]);
 
   const simulateAlert = () => {
     const bg = BLOOD_GROUPS[Math.floor(Math.random() * BLOOD_GROUPS.length)];
