@@ -14,8 +14,6 @@ build/
 
 # Trained model artifacts (run locally, do not commit)
 backend/trained_models/
-member_2_ml_models/models/
-member_2_ml_models/outputs/
 
 # Database
 *.db
@@ -25,8 +23,6 @@ member_2_ml_models/outputs/
 backend/datasets/mimic_iv/
 backend/datasets/demand/
 backend/datasets/supply/
-member_1_data_engineering/data/
-member_2_ml_models/data/
 
 # Frontend build
 node_modules/
