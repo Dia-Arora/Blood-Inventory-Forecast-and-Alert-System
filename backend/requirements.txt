@@ -4,12 +4,7 @@ pandas
 numpy
 scikit-learn
 lightgbm
-xgboost
 prophet
-darts
-matplotlib
-seaborn
 joblib
-python-multipart
 pytest
 httpx
