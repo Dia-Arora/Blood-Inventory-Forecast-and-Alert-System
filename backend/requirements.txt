@@ -7,4 +7,4 @@ lightgbm
 prophet
 joblib
 pytest
-httpx
+httpx<0.28
