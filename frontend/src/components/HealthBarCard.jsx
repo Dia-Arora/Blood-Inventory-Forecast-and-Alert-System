@@ -29,7 +29,7 @@ export default function HealthBarCard({ bloodType, series, dayIndex }) {
       className={`p-5 rounded-2xl border bg-white transition-all duration-300 cursor-pointer hover:-translate-y-0.5 ${isCritical ? 'border-rose-300' : 'border-gray-200/80 hover:border-rose-300'}`}
       onClick={() => setExpanded(e => !e)}
     >
-      <div key={`${bloodType}-${dayIndex}-flash`} className={justWasted ? 'anim-shake' : ''}>
+      <div key={justWasted ? `${bloodType}-${dayIndex}-flash` : `${bloodType}-stable`} className={justWasted ? 'anim-shake' : ''}>
         <div className="flex justify-between items-center mb-3">
           <span className="font-outfit text-[22px] font-normal text-gray-900">{bloodType}</span>
           <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-normal uppercase tracking-wider border ${st.bg} ${st.text} ${st.border} ${isCritical ? 'animate-pulse' : ''}`}>
