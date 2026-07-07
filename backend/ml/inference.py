@@ -3,6 +3,7 @@ import numpy as np
 import joblib
 import os
 from datetime import datetime, timedelta
+from ml.demand_split import split_by_type
 
 # Load models safely (they might not exist until training finishes)
 DEMAND_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'demand_model.pkl')
@@ -88,5 +89,14 @@ def predict_supply(days=30):
                 "predicted_supply": max(0, round(float(row['yhat'])))
             })
         results[bt.upper()] = preds
-        
+
     return results
+
+
+def predict_demand_by_type(days=30):
+    """
+    Per-blood-type demand: forecasts the aggregate total (LightGBM) and
+    disaggregates it via ml.demand_split (see that module for the method).
+    """
+    total_demand = predict_demand(days)
+    return split_by_type(total_demand)
