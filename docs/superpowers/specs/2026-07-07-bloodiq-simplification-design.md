@@ -128,6 +128,35 @@ frontend/src/
   N-day array returned by one `/simulate` call — the backend is not
   step-wise/stateful; all animation state lives client-side.
 
+### Interactivity levels (approved)
+
+- **Level A (default, always visible):** below each health-bar card, a small
+  text/badge readout showing that day's forecasted demand, forecasted supply,
+  shortage_risk label, and wastage_risk label. Updates in sync with the
+  Next Day / auto-play scrubber — no click required to see it.
+- **Level B (click-to-expand, opt-in):** clicking a blood-type card expands
+  it into a chart showing demand vs. supply as two lines across all N days
+  at once (not just the current day), with a color-coded strip underneath
+  marking which days were WARNING/CRITICAL for shortage and which days had
+  wastage. Collapses back to the Level A card on a second click.
+- Both levels are driven by the same single `/simulate` response — no extra
+  API calls needed for the expand interaction.
+
+### Visual theme constraint
+
+The gamified health-bar mechanic (fill %, color-by-risk, shake/flash
+animations, Next Day scrubber) is a new **interaction pattern**, not a new
+**visual language**. It must be built using the dashboard's existing design
+system already in place after the latest pull — the Tailwind v4 setup in
+`frontend/src/index.css` (`@theme` block: rose/blush palette, "Outfit"
+typography), the existing card/section conventions in
+`frontend/src/pages/Dashboard.jsx`, and the existing `Navbar`/`Home`/routing
+structure. The dark-navy/red color scheme used in the earlier brainstorming
+mockup was illustrative of the *mechanic* only — the shipped version reskins
+that mechanic in the current rose/blush theme (e.g., CRITICAL uses the
+existing rose-600/rose-700 tones already defined, not a new red). No
+redesign of layout, navigation, or color system.
+
 ## Error handling
 
 - Calling forecast/simulate endpoints before training → clear error directing
