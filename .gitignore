@@ -20,9 +20,6 @@ backend/trained_models/
 *.sqlite3
 
 # Raw and processed datasets (too large for git; use PhysioNet / DVC)
-backend/datasets/mimic_iv/
-backend/datasets/demand/
-backend/datasets/supply/
 
 # Frontend build
 node_modules/
