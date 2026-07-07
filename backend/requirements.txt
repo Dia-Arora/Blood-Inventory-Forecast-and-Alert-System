@@ -11,3 +11,5 @@ matplotlib
 seaborn
 joblib
 python-multipart
+pytest
+httpx
