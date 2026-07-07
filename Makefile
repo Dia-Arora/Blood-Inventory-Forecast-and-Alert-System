@@ -1,29 +1,22 @@
-.PHONY: install data train evaluate test api clean
+.PHONY: install train-demand train-supply api test clean
 
 install:
-	pip install -r requirements.txt
+	cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
-data:
-	python src/data/make_dataset.py
-	python src/features/build_features.py
+train-demand:
+	cd backend && .venv/bin/python -c "from ml.train_demand import train; train()"
 
-train:
-	python src/models/train_model.py
-	python src/models/train_classifier.py
-
-evaluate:
-	python src/models/evaluate_results.py
-	python src/visualization/visualize.py
-
-test:
-	pytest tests/ -v --cov=src 
+train-supply:
+	cd backend && .venv/bin/python -c "from ml.train_supply import train; train()"
 
 api:
-	uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && .venv/bin/uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+
+test:
+	cd backend && .venv/bin/pytest tests/ -v
 
 clean:
-	rm -rf __pycache__ .pytest_cache
-	find . -type f -name "*.pyc" -delete
-	find . -type d -name "*.egg-info" -delete
+	find backend -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find backend -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 
-all: install data train evaluate test
+all: install train-demand train-supply test
