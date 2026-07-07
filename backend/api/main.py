@@ -1,8 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from ml.inference import predict_demand, predict_supply
+from ml.inference import predict_demand, predict_supply, predict_demand_by_type
 from ml.train_demand import train as train_demand_model
 from ml.train_supply import train as train_supply_model
+from simulation.engine import run_simulation
 import logging
 
 app = FastAPI(title="BloodIQ AI Intelligence Engine")
@@ -36,6 +37,17 @@ def get_supply_forecast(days: int = 30):
         return {"status": "success", "data": forecast}
     except Exception as e:
         logging.error(f"Supply Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/simulate")
+def simulate(days: int = 30):
+    try:
+        demand_by_type = predict_demand_by_type(days)
+        supply_by_type = predict_supply(days)
+        result = run_simulation(demand_by_type, supply_by_type, days)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logging.error(f"Simulate Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/train/demand")
