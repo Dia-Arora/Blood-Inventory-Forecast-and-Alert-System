@@ -1,10 +1,20 @@
 """
 Shared constants for the BloodIQ simulation and rule engines.
-No database, no per-hospital config -- one national-level simulation
-across the 4 ABO blood types present in the real datasets.
+No database -- one simulated blood bank across the 4 ABO blood types
+present in the real datasets.
 """
 
 BLOOD_TYPES = ["A", "B", "AB", "O"]
+
+# Neither real dataset has hospital-level detail -- both are national
+# totals for Malaysia. To simulate a single typical hospital blood bank
+# rather than the whole country, forecasted demand and supply are scaled
+# down by this factor before the simulation runs. Malaysia has on the
+# order of ~100 hospitals with blood banks nationally, so 1/100 of the
+# national volume approximates one typical hospital's share. This is a
+# documented approximation (like the demand generation itself), not a
+# real per-hospital measurement -- there is no dataset that provides one.
+HOSPITAL_SCALE_FACTOR = 0.01
 
 # Red blood cells: standard shelf life at 1-6 C.
 SHELF_LIFE_DAYS = 42

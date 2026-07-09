@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import joblib
 import pandas as pd
 
+from config import HOSPITAL_SCALE_FACTOR
+
 DEMAND_MODELS_PATH = os.path.join(os.path.dirname(__file__), 'demand_models.pkl')
 SUPPLY_MODELS_PATH = os.path.join(os.path.dirname(__file__), 'supply_models.pkl')
 
@@ -29,6 +31,10 @@ def predict_demand_by_type(days=30):
     synthesized/guessed here -- calendar features for a future date are
     always exactly known, so this forecast is fully deterministic: calling
     it twice in a row returns identical results.
+
+    The models are trained on national-scale data; predictions are scaled
+    down by HOSPITAL_SCALE_FACTOR (see config.py) to approximate a single
+    hospital blood bank rather than the whole country.
     """
     models = get_demand_models()
     if not models:
@@ -52,7 +58,7 @@ def predict_demand_by_type(days=30):
     for bt, model in models.items():
         preds = model.predict(df_future[features])
         results[bt.upper()] = [
-            {"date": date.strftime('%Y-%m-%d'), "predicted_demand": max(0, round(float(pred)))}
+            {"date": date.strftime('%Y-%m-%d'), "predicted_demand": max(0, round(float(pred) * HOSPITAL_SCALE_FACTOR))}
             for date, pred in zip(future_dates, preds)
         ]
     return results
@@ -62,6 +68,10 @@ def predict_supply(days=30):
     """
     Predicts blood supply/donations for the next 'days' using Prophet.
     Returns predictions broken down by blood type.
+
+    The models are trained on national-scale data; predictions are scaled
+    down by HOSPITAL_SCALE_FACTOR (see config.py) to approximate a single
+    hospital blood bank rather than the whole country.
     """
     models = get_supply_models()
     if not models:
@@ -77,7 +87,7 @@ def predict_supply(days=30):
         for _, row in recent_forecast.iterrows():
             preds.append({
                 "date": row['ds'].strftime('%Y-%m-%d'),
-                "predicted_supply": max(0, round(float(row['yhat'])))
+                "predicted_supply": max(0, round(float(row['yhat']) * HOSPITAL_SCALE_FACTOR))
             })
         results[bt.upper()] = preds
 
