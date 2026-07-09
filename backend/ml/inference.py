@@ -5,6 +5,7 @@ import joblib
 import pandas as pd
 
 from config import HOSPITAL_SCALE_FACTOR
+from simulation.scenario_shocks import demand_shock_multiplier, supply_shock_multiplier
 
 DEMAND_MODELS_PATH = os.path.join(os.path.dirname(__file__), 'demand_models.pkl')
 SUPPLY_MODELS_PATH = os.path.join(os.path.dirname(__file__), 'supply_models.pkl')
@@ -34,7 +35,11 @@ def predict_demand_by_type(days=30):
 
     The models are trained on national-scale data; predictions are scaled
     down by HOSPITAL_SCALE_FACTOR (see config.py) to approximate a single
-    hospital blood bank rather than the whole country.
+    hospital blood bank rather than the whole country. A deterministic
+    scenario-shock layer (see simulation/scenario_shocks.py) is then
+    applied on top of the smooth point forecast, since no calendar-based
+    model can predict an unforecastable trauma surge -- without this, the
+    simulation never shows a real CRITICAL shortage.
     """
     models = get_demand_models()
     if not models:
@@ -58,7 +63,10 @@ def predict_demand_by_type(days=30):
     for bt, model in models.items():
         preds = model.predict(df_future[features])
         results[bt.upper()] = [
-            {"date": date.strftime('%Y-%m-%d'), "predicted_demand": max(0, round(float(pred) * HOSPITAL_SCALE_FACTOR))}
+            {
+                "date": date.strftime('%Y-%m-%d'),
+                "predicted_demand": max(0, round(float(pred) * HOSPITAL_SCALE_FACTOR * demand_shock_multiplier(bt, date))),
+            }
             for date, pred in zip(future_dates, preds)
         ]
     return results
@@ -71,7 +79,11 @@ def predict_supply(days=30):
 
     The models are trained on national-scale data; predictions are scaled
     down by HOSPITAL_SCALE_FACTOR (see config.py) to approximate a single
-    hospital blood bank rather than the whole country.
+    hospital blood bank rather than the whole country. A deterministic
+    scenario-shock layer (see simulation/scenario_shocks.py) is then
+    applied on top of Prophet's smoothed point forecast, since real
+    donation shortfalls/gluts are unpredictable in advance -- without
+    this, the simulation never shows real wastage risk.
     """
     models = get_supply_models()
     if not models:
@@ -85,9 +97,10 @@ def predict_supply(days=30):
 
         preds = []
         for _, row in recent_forecast.iterrows():
+            date_obj = row['ds']
             preds.append({
-                "date": row['ds'].strftime('%Y-%m-%d'),
-                "predicted_supply": max(0, round(float(row['yhat']) * HOSPITAL_SCALE_FACTOR))
+                "date": date_obj.strftime('%Y-%m-%d'),
+                "predicted_supply": max(0, round(float(row['yhat']) * HOSPITAL_SCALE_FACTOR * supply_shock_multiplier(bt, date_obj)))
             })
         results[bt.upper()] = preds
 
