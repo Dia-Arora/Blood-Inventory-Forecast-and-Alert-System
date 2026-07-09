@@ -246,10 +246,10 @@ The important endpoints:
 
 - **`POST /api/train/demand`** — runs the LightGBM training process from scratch and saves the model to disk.
 - **`POST /api/train/supply`** — runs the 4 Prophet trainings from scratch and saves them to disk.
-- **`GET /api/forecast/demand?days=30`** — returns just the aggregate LightGBM demand forecast.
+- **`GET /api/forecast/demand?days=30`** — returns the 4 per-type LightGBM demand forecasts.
 - **`GET /api/forecast/supply?days=30`** — returns just the 4 Prophet supply forecasts.
 - **`GET /api/simulate?days=30`** — the main endpoint the dashboard actually uses. In one call, this:
-  1. Calls the demand model and disaggregates it by type (§5)
+  1. Calls the 4 demand models, one per blood type (§3)
   2. Calls the 4 supply models
   3. Runs the full day-by-day simulation (§6) for all 4 blood types
   4. Classifies every day for shortage and wastage risk (§7)
@@ -332,11 +332,11 @@ time it was asked.
 
 | File | Role |
 |---|---|
-| `backend/data/blood_demand.csv` | Real Kaggle demand dataset |
+| `backend/data/generate_demand.py` | Generates the synthetic demand dataset, anchored to real donations |
+| `backend/data/blood_demand.csv` | Generated demand dataset, per blood type |
 | `backend/data/blood_donations.csv` | Real Malaysian donation dataset |
-| `backend/ml/train_demand.py` | Trains the LightGBM demand model |
+| `backend/ml/train_demand.py` | Trains the 4 per-type LightGBM demand models |
 | `backend/ml/train_supply.py` | Trains the 4 Prophet supply models |
-| `backend/ml/demand_split.py` | Disaggregates aggregate demand into per-type demand |
 | `backend/ml/inference.py` | Loads trained models and produces forecasts |
 | `backend/config.py` | Shared constants (blood types, shelf life, thresholds) |
 | `backend/simulation/engine.py` | Day-by-day FEFO stock simulation |
