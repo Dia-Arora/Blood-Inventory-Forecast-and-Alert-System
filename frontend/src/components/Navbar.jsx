@@ -31,13 +31,6 @@ export default function Navbar() {
           ))}
         </div>
         
-        <div className="hidden md:flex items-center">
-          <Link to="/dashboard"
-            className="text-[14px] font-normal bg-gray-900 text-white px-5 py-2 rounded-lg hover:bg-gray-800 hover:shadow-md transition-all hover:-translate-y-0.5 transform duration-200">
-            Get Started
-          </Link>
-        </div>
-
         <button className="md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
           {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
@@ -49,10 +42,6 @@ export default function Navbar() {
             <Link key={l.label} to={l.to} onClick={() => setMobileOpen(false)}
               className="block text-[15px] font-normal text-gray-600 hover:text-gray-900 py-2">{l.label}</Link>
           ))}
-          <Link to="/dashboard" onClick={() => setMobileOpen(false)}
-            className="block text-center text-[14px] font-normal bg-gray-900 text-white px-5 py-2.5 rounded-lg mt-2">
-            Get Started
-          </Link>
         </div>
       )}
     </nav>

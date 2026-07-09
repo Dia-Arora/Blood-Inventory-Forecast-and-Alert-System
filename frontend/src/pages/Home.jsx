@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BarChart3, ShieldCheck, Zap, Timer, HeartPulse, Activity, Layers, CheckCircle } from 'lucide-react';
+import { ArrowRight, BarChart3, ShieldCheck, Zap, Timer, HeartPulse, Activity, CheckCircle } from 'lucide-react';
 
 export default function Home() {
   return (
@@ -110,25 +110,6 @@ export default function Home() {
               </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* ═══ FINAL CTA ═══ */}
-      <section className="py-24 border-t border-gray-200/70 bg-gradient-to-b from-white to-rose-50/20">
-        <div className="max-w-2xl mx-auto px-6 text-center">
-          <div className="w-12 h-12 bg-rose-100/80 text-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm">
-            <Layers className="w-6 h-6" />
-          </div>
-          <h2 className="font-outfit text-3xl md:text-4xl font-normal text-gray-900 mb-4">
-            Ready to optimize your blood inventory?
-          </h2>
-          <p className="font-sans text-gray-600 text-[16px] mb-8 leading-relaxed">
-            Connect your existing hospital management systems and start monitoring in minutes.
-          </p>
-          <Link to="/dashboard"
-            className="inline-flex items-center gap-2 bg-gray-900 text-white text-[14px] font-normal px-8 py-3.5 rounded-xl hover:bg-rose-600 hover:shadow-lg hover:shadow-rose-500/20 hover:-translate-y-0.5 transition-all transform duration-200">
-            <span>Open Live Dashboard</span> <ArrowRight className="w-4 h-4" />
-          </Link>
         </div>
       </section>
 
