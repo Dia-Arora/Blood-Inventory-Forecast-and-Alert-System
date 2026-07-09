@@ -3,6 +3,7 @@ import numpy as np
 import joblib
 import os
 from datetime import datetime, timedelta
+from config import DEMAND_SCALE_FACTOR
 from ml.demand_split import split_by_type
 
 # Load models safely (they might not exist until training finishes)
@@ -22,8 +23,13 @@ def get_supply_models():
 def predict_demand(days=30):
     """
     Predicts the total blood demand for the next 'days' days.
-    Uses LightGBM. Since we need future covariates, we will synthesize realistic 
+    Uses LightGBM. Since we need future covariates, we will synthesize realistic
     future features based on historical averages to feed the model.
+
+    The raw model output is multiplied by DEMAND_SCALE_FACTOR (see config.py)
+    to reconcile the demand dataset's scale with the real supply dataset's
+    much larger scale -- without this, supply always dwarfs demand and the
+    simulation never shows a shortage or wastage day.
     """
     model = get_demand_model()
     if not model:
@@ -59,7 +65,7 @@ def predict_demand(days=30):
     for date, pred in zip(future_dates, preds):
         results.append({
             "date": date.strftime('%Y-%m-%d'),
-            "predicted_demand": round(float(pred))
+            "predicted_demand": round(float(pred) * DEMAND_SCALE_FACTOR)
         })
         
     return results
