@@ -24,13 +24,3 @@ SHORTAGE_WARNING_COVERAGE_DAYS = 7
 WASTAGE_NEAR_EXPIRY_WINDOW_DAYS = 3
 WASTAGE_HIGH_RATIO = 0.4
 WASTAGE_MED_RATIO = 0.15
-
-# The demand dataset (Kaggle, ~184 units/day national total) and the supply
-# dataset (Malaysia, ~1299 units/day national total across all 4 types) come
-# from two different-sized real-world systems -- without reconciling scale,
-# supply always dwarfs demand and the simulation never shows a shortage or
-# wastage. This factor scales the demand forecast up to be comparable to the
-# supply forecast's real scale (computed as avg_total_supply / avg_total_demand
-# from the two real CSVs: 1299.2 / 184.0 = 7.0623), rather than fabricating
-# new demand numbers from nothing.
-DEMAND_SCALE_FACTOR = 7.0623
