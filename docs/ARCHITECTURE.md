@@ -1,7 +1,8 @@
 # Architecture Overview
 
-BloodIQ is scoped to four capabilities, built on two real datasets, with no
-database and no per-hospital modeling:
+BloodIQ is scoped to four capabilities, built on one real dataset and one
+dataset generated to be coherent with it, with no database and no
+per-hospital modeling:
 
 1. Supply (donation) forecasting per blood type
 2. Demand forecasting per blood type
@@ -21,7 +22,7 @@ database and no per-hospital modeling:
 
 ```
 backend/
-  data/                 Real datasets (see above)
+  data/                 Datasets (see above)
   ml/
     train_demand.py     LightGBM x4, one per blood type, on generated demand
     train_supply.py     Prophet x4, one per blood type, on real donations
