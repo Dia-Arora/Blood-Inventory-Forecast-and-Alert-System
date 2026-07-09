@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from ml.inference import predict_demand, predict_supply, predict_demand_by_type
+from ml.inference import predict_supply, predict_demand_by_type
 from ml.train_demand import train as train_demand_model
 from ml.train_supply import train as train_supply_model
 from simulation.engine import run_simulation
@@ -24,7 +24,7 @@ def read_root():
 @app.get("/api/forecast/demand")
 def get_demand_forecast(days: int = 30):
     try:
-        forecast = predict_demand(days)
+        forecast = predict_demand_by_type(days)
         return {"status": "success", "data": forecast}
     except Exception as e:
         logging.error(f"Demand Error: {str(e)}")
