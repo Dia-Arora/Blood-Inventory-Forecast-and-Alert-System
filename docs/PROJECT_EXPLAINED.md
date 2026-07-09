@@ -254,8 +254,24 @@ The important endpoints:
   3. Runs the full day-by-day simulation (§6) for all 4 blood types
   4. Classifies every day for shortage and wastage risk (§7)
   5. Returns everything as one JSON response: `{"A": [...30 day-records...], "B": [...], "AB": [...], "O": [...]}`
+- **`GET /api/backtest`** — returns held-out accuracy data for both models, per blood type (see §8.1 below). Cached in memory after the first call, since fitting the supply-side backtest models is comparatively slow.
 
-Nothing is cached or stored — every call retrains nothing (models are loaded from the `.pkl` files saved during training) but re-runs the forecasting and simulation fresh, so the numbers reflect "today" as the starting point every time you call it.
+Nothing is cached or stored — every call retrains nothing (models are loaded from the `.pkl` files saved during training) but re-runs the forecasting and simulation fresh, so the numbers reflect "today" as the starting point every time you call it. The one exception is `/api/backtest`, which caches its result, since it evaluates against fixed historical data that never changes at runtime.
+
+### 8.1 Backtesting — proving the accuracy claim instead of asserting it
+
+**File:** `backend/ml/backtest.py`
+
+Both forecasting models can silently claim to be "accurate" without ever showing evidence. Backtesting closes that gap by holding out the most recent 30 real days per blood type, forecasting them without letting the model see them, and comparing the forecast against what actually happened:
+
+- **Demand:** no retraining needed here — the production LightGBM models (`demand_models.pkl`) are already trained on all-but-the-last-30-days (see §3), so the held-out last 30 real days are reused directly as the test set.
+- **Supply:** the production Prophet models are trained on 100% of history with no holdout (see §4), so a fair evaluation needs its own train-only-on-the-earlier-portion fit. This fit exists purely for this evaluation and is never saved over `supply_models.pkl` — the deployed supply model is untouched.
+- Both sides scale their actual and predicted values by the same `HOSPITAL_SCALE_FACTOR` used everywhere else in the simulation (§ below), so the numbers shown are single-hospital-scale, not national-scale — comparable to everything else on the dashboard.
+- For each blood type and each model, the response includes the day-by-day `actual` and `predicted` series plus two summary metrics: **MAE** (mean absolute error) and **RMSE** (root mean squared error), both in hospital-scale units/day.
+
+**Why this matters:** it turns "the model is accurate" from an assertion into something a viewer can see for themselves — a real vs. predicted line chart and a number, not a claim.
+
+**What it deliberately does NOT do:** the demand model's evaluation was already this rigorous before the backtest view existed (it just never left the training console log); adding proper walk-forward cross-validation (multiple rolling holdout windows instead of one fixed 30-day window) or a naive-baseline comparison would make this more rigorous still, but neither has been added yet.
 
 ---
 
@@ -284,6 +300,12 @@ A real-time-feeling feed of events, but every single entry is derived directly f
 ### 9.4 Visual design
 
 The whole gamified interaction (fill bars, color-by-risk, shake animation, day scrubber) deliberately reuses the site's existing design system — the same rose/blush color palette and "Outfit" typography used elsewhere on the site — rather than introducing a new visual style just for this feature.
+
+### 9.5 The Backtest page
+
+**File:** `frontend/src/pages/Backtest.jsx`
+
+A separate page (linked from the navbar) that calls `/api/backtest` once on load and renders one card per blood type. Each card holds two line charts — "Demand (LightGBM)" and "Supply (Prophet)" — each overlaying the real historical `actual` line against the model's `predicted` line for the held-out 30-day window, with MAE and RMSE shown as badges above each chart. This is the concrete answer to "how do I know the models are accurate": a viewer can see the two lines track each other (or not) rather than being asked to trust a claim.
 
 ---
 
@@ -342,8 +364,10 @@ time it was asked.
 | `backend/simulation/engine.py` | Day-by-day FEFO stock simulation |
 | `backend/simulation/shortage_rules.py` | Shortage risk classifier |
 | `backend/simulation/wastage_rules.py` | Wastage risk classifier |
+| `backend/ml/backtest.py` | Held-out accuracy evaluation (actual vs. predicted, MAE/RMSE) for both models |
 | `backend/api/main.py` | The web server tying everything together |
-| `frontend/src/lib/api.js` | Fetches the simulation data from the backend |
+| `frontend/src/lib/api.js` | Fetches the simulation and backtest data from the backend |
 | `frontend/src/components/HealthBarCard.jsx` | One blood-type's gamified status card |
 | `frontend/src/components/AlertStream.jsx` | The real-data-driven alert feed |
 | `frontend/src/pages/Dashboard.jsx` | The page that ties it all together |
+| `frontend/src/pages/Backtest.jsx` | Actual-vs-predicted accuracy charts per blood type |

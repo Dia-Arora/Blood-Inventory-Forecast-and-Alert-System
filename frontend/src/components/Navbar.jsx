@@ -9,6 +9,7 @@ export default function Navbar() {
   const links = [
     { to: '/', label: 'Home' },
     { to: '/dashboard', label: 'Dashboard' },
+    { to: '/backtest', label: 'Backtest' },
   ];
 
   return (

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ml.inference import predict_supply, predict_demand_by_type
 from ml.train_demand import train as train_demand_model
 from ml.train_supply import train as train_supply_model
+from ml.backtest import run_backtest
 from simulation.engine import run_simulation
 import logging
 
@@ -48,6 +49,15 @@ def simulate(days: int = 30):
         return {"status": "success", "data": result}
     except Exception as e:
         logging.error(f"Simulate Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/backtest")
+def get_backtest():
+    try:
+        data = run_backtest()
+        return {"status": "success", "data": data}
+    except Exception as e:
+        logging.error(f"Backtest Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/train/demand")
