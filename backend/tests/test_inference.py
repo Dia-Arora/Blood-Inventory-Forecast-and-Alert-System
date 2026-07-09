@@ -1,25 +1,29 @@
-from config import DEMAND_SCALE_FACTOR
 from ml import inference
 
 
-def test_predict_demand_by_type_splits_the_aggregate(monkeypatch):
-    fake_total = [{"date": "2024-01-01", "predicted_demand": 100.0}]
-    monkeypatch.setattr(inference, "predict_demand", lambda days: fake_total)
-
-    result = inference.predict_demand_by_type(1)
-
-    assert set(result.keys()) == {"A", "B", "AB", "O"}
-    day_total = sum(result[bt][0]["predicted_demand"] for bt in result)
-    assert abs(day_total - 100.0) < 1e-6
-
-
-def test_predict_demand_applies_the_scale_factor(monkeypatch):
+def test_predict_demand_by_type_returns_all_four_types(monkeypatch):
     class FakeModel:
         def predict(self, X):
-            return [10.0] * len(X)
+            return [42.0] * len(X)
 
-    monkeypatch.setattr(inference, "get_demand_model", lambda: FakeModel())
+    fake_models = {bt: FakeModel() for bt in ["a", "b", "ab", "o"]}
+    monkeypatch.setattr(inference, "get_demand_models", lambda: fake_models)
 
-    result = inference.predict_demand(days=1)
+    result = inference.predict_demand_by_type(days=3)
 
-    assert result[0]["predicted_demand"] == round(10.0 * DEMAND_SCALE_FACTOR)
+    assert set(result.keys()) == {"A", "B", "AB", "O"}
+    for bt in result:
+        assert len(result[bt]) == 3
+        for record in result[bt]:
+            assert record["predicted_demand"] == 42
+            assert "date" in record
+
+
+def test_predict_demand_by_type_raises_when_untrained(monkeypatch):
+    monkeypatch.setattr(inference, "get_demand_models", lambda: {})
+
+    try:
+        inference.predict_demand_by_type(days=1)
+        assert False, "expected an exception"
+    except Exception as e:
+        assert "not trained" in str(e)
