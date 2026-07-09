@@ -6,15 +6,17 @@ risk per type — visualized as a gamified "health bar" dashboard.
 
 ## Scope
 
-Built on two real, freely available datasets:
+Built on one real dataset and one dataset generated to be coherent with it:
 
-- **Demand:** [Kaggle blood demand dataset](https://www.kaggle.com/datasets/rishi2003das/blood-demand-dataset) — national daily aggregate.
-- **Supply:** [Malaysia government blood donation data](https://data.gov.my/data-catalogue/blood_donations) — daily, per blood type.
+- **Supply (real):** [Malaysia government blood donation data](https://data.gov.my/data-catalogue/blood_donations) — daily, per blood type, 2006–2026.
+- **Demand (generated):** produced by `backend/data/generate_demand.py`,
+  anchored to the real donation data above so both share the same
+  calendar and order of magnitude — see
+  `docs/superpowers/specs/2026-07-09-synthetic-demand-generation-design.md`
+  for the full method and rationale.
 
 Neither dataset has hospital-level detail or Rh factor (+/-), so BloodIQ
-targets national-level A/B/AB/O forecasting and simulation only — see
-`docs/superpowers/specs/2026-07-07-bloodiq-simplification-design.md` for
-the full rationale.
+targets national-level A/B/AB/O forecasting and simulation only.
 
 ## Quick start
 
@@ -22,6 +24,7 @@ the full rationale.
 # Backend
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python data/generate_demand.py
 .venv/bin/python -c "from ml.train_demand import train; train()"
 .venv/bin/python -c "from ml.train_supply import train; train()"
 .venv/bin/uvicorn api.main:app --reload --port 8000
