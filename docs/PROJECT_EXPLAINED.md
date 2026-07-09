@@ -167,6 +167,43 @@ already returns.
 
 ---
 
+## 4.1 The scenario-shock layer — realism and what-if stress-testing
+
+**File:** `backend/simulation/scenario_shocks.py`, used via `backend/ml/inference.py`
+
+Both models above only ever learn the *expected* pattern from calendar/time features — no model can forecast a specific future trauma surge or a specific donation shortfall, because those are genuinely unpredictable in advance. Without something layered on top, both forecasts would be smooth curves that never produce a real CRITICAL shortage or HIGH wastage day. This layer adds that missing realism as a deterministic multiplier applied to each day's point forecast, after `HOSPITAL_SCALE_FACTOR` scaling.
+
+**Deterministic, not actually random:** every `(blood_type, date)` pair always produces the exact same multiplier, using a stable SHA-256-based seed (Python's built-in `hash()` is randomized per-process and would silently break this across server restarts).
+
+**Default behavior (always on unless a scenario overrides it):**
+| Effect | Chance | Multiplier |
+|---|---|---|
+| Daily jitter | every day | ±~15% |
+| Demand surge (trauma cluster) | ~6% of weeks | 1.8x–2.6x |
+| Supply shortfall (bad weather, holidays) | ~5% of weeks | 0.4x–0.6x |
+| Supply glut (successful drive) | ~5% of weeks | 1.6x–2.2x |
+
+None of these default numbers are evidence-based — they were tuned purely so the simulation can reach CRITICAL/HIGH states at all, not calibrated against a real statistic.
+
+### 4.1.1 Named what-if scenarios
+
+**File:** `backend/simulation/scenarios.py`
+
+A viewer can pick a named scenario instead of the default random behavior. Each scenario overrides the demand and/or supply multiplier for a **fixed day window** of the simulation (day 0 = the first simulated day) rather than leaving it to chance — so the same scenario always plays out identically. Unlike the default numbers above, these are grounded in real, cited events wherever possible:
+
+| Scenario | Side affected | Multiplier | Days | Basis |
+|---|---|---|---|---|
+| **Mass Casualty Event** | Demand only | 6x–10x (days 2-3), tapering to 2x–3x (days 4-5) | 4 days (day 2–5) | Derived, not directly cited: clinical "massive transfusion" = 10+ units/patient/24h (NCBI StatPearls); real single events used hundreds of units across multiple hospitals in 24h (2017 Las Vegas shooting: ~499 components; Pulse nightclub: ~550 units) |
+| **Donation Drive** | Supply only, an *increase* | 1.4x–1.7x | 2 days (day 1–2) | Cited: American Red Cross reported a 53% donation increase in the two days following the 2017 Las Vegas shooting — the same public rallying effect a targeted drive aims to produce |
+| **Holiday Weekend** | Both, mild dip | Demand 0.85x–0.90x, Supply 0.75x–0.80x | 3 days (day 1–3) | Supply dip cited (Red Cross: ~7,000-unit shortfall over the Christmas–New Year's week, scaled to a shorter weekend); demand dip is an assumption (elective procedures commonly pause around holidays) — no cited percentage found |
+| **Default (random)** | — | — | ongoing | The always-on random behavior above; explicitly not evidence-based |
+
+**A subtlety worth knowing:** the simulation seeds its starting stock from day 1's forecasted demand (`INITIAL_STOCK_COVERAGE_DAYS` × day 1's demand — see §6). If Mass Casualty's spike started on day 1, that same inflated demand number would inflate the seeded starting stock too, cushioning the very shortage the scenario is supposed to create. That's why its override starts on day 2 instead: day 1 stays at the normal baseline, then the spike hits the day after.
+
+**How it's exposed:** `GET /api/scenarios` returns the list above (label, description, source, multiplier range, day window) for the frontend to render; `GET /api/simulate?scenario=mass_casualty` (or `donation_drive`, `holiday_weekend`, `default`) runs the simulation with that scenario active. The Dashboard's scenario dropdown (§9.6) calls this directly.
+
+---
+
 ## 5. Why there's no "disaggregation problem" anymore
 
 An earlier version of this project only had a single national demand
@@ -248,12 +285,14 @@ The important endpoints:
 - **`POST /api/train/supply`** — runs the 4 Prophet trainings from scratch and saves them to disk.
 - **`GET /api/forecast/demand?days=30`** — returns the 4 per-type LightGBM demand forecasts.
 - **`GET /api/forecast/supply?days=30`** — returns just the 4 Prophet supply forecasts.
-- **`GET /api/simulate?days=30`** — the main endpoint the dashboard actually uses. In one call, this:
-  1. Calls the 4 demand models, one per blood type (§3)
-  2. Calls the 4 supply models
+- **`GET /api/simulate?days=30&scenario=default`** — the main endpoint the dashboard actually uses. In one call, this:
+  1. Calls the 4 demand models, one per blood type (§3), applying the scenario-shock layer (§4.1) for the chosen `scenario`
+  2. Calls the 4 supply models, same scenario applied
   3. Runs the full day-by-day simulation (§6) for all 4 blood types
   4. Classifies every day for shortage and wastage risk (§7)
   5. Returns everything as one JSON response: `{"A": [...30 day-records...], "B": [...], "AB": [...], "O": [...]}`
+  `scenario` defaults to `"default"` (the always-on random behavior) and otherwise must be one of the named scenarios in §4.1.1, or the request is rejected with a 400.
+- **`GET /api/scenarios`** — returns the list of available named scenarios (label, description, source, multiplier range, day window) for the frontend dropdown to render (§4.1.1).
 - **`GET /api/backtest`** — returns held-out accuracy data for both models, per blood type (see §8.1 below). Cached in memory after the first call, since fitting the supply-side backtest models is comparatively slow.
 
 Nothing is cached or stored — every call retrains nothing (models are loaded from the `.pkl` files saved during training) but re-runs the forecasting and simulation fresh, so the numbers reflect "today" as the starting point every time you call it. The one exception is `/api/backtest`, which caches its result, since it evaluates against fixed historical data that never changes at runtime.
@@ -301,7 +340,13 @@ A real-time-feeling feed of events, but every single entry is derived directly f
 
 The whole gamified interaction (fill bars, color-by-risk, shake animation, day scrubber) deliberately reuses the site's existing design system — the same rose/blush color palette and "Outfit" typography used elsewhere on the site — rather than introducing a new visual style just for this feature.
 
-### 9.5 The Backtest page
+### 9.5 The scenario dropdown
+
+**File:** `frontend/src/pages/Dashboard.jsx`
+
+A dropdown in the dashboard header (populated from `GET /api/scenarios`) lets a viewer pick "Default (random)" or one of the three named scenarios (§4.1.1). Choosing one re-fetches `/api/simulate` with that `scenario` and re-renders everything. When a non-default scenario is active, a banner appears above the KPI cards showing its description, the demand/supply shock multiplier range with the exact day window it applies to, and the citation/derivation text — so a viewer sees not just that the simulation changed, but *why*, *by how much*, and *whether that number is backed by a real source or an assumption*.
+
+### 9.6 The Backtest page
 
 **File:** `frontend/src/pages/Backtest.jsx`
 
@@ -364,10 +409,12 @@ time it was asked.
 | `backend/simulation/engine.py` | Day-by-day FEFO stock simulation |
 | `backend/simulation/shortage_rules.py` | Shortage risk classifier |
 | `backend/simulation/wastage_rules.py` | Wastage risk classifier |
+| `backend/simulation/scenario_shocks.py` | Deterministic default randomness + named-scenario multiplier overrides |
+| `backend/simulation/scenarios.py` | Named what-if scenario definitions (mass casualty, donation drive, holiday weekend) |
 | `backend/ml/backtest.py` | Held-out accuracy evaluation (actual vs. predicted, MAE/RMSE) for both models |
 | `backend/api/main.py` | The web server tying everything together |
-| `frontend/src/lib/api.js` | Fetches the simulation and backtest data from the backend |
+| `frontend/src/lib/api.js` | Fetches the simulation, scenario list, and backtest data from the backend |
 | `frontend/src/components/HealthBarCard.jsx` | One blood-type's gamified status card |
 | `frontend/src/components/AlertStream.jsx` | The real-data-driven alert feed |
-| `frontend/src/pages/Dashboard.jsx` | The page that ties it all together |
+| `frontend/src/pages/Dashboard.jsx` | The page that ties it all together, including the scenario dropdown |
 | `frontend/src/pages/Backtest.jsx` | Actual-vs-predicted accuracy charts per blood type |
