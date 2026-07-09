@@ -23,7 +23,7 @@ def get_supply_models():
     return {}
 
 
-def predict_demand_by_type(days=30):
+def predict_demand_by_type(days=30, scenario="default"):
     """
     Predicts per-blood-type demand for the next 'days' days using the 4
     LightGBM models (one per type), trained purely on calendar features.
@@ -65,14 +65,14 @@ def predict_demand_by_type(days=30):
         results[bt.upper()] = [
             {
                 "date": date.strftime('%Y-%m-%d'),
-                "predicted_demand": max(0, round(float(pred) * HOSPITAL_SCALE_FACTOR * demand_shock_multiplier(bt, date))),
+                "predicted_demand": max(0, round(float(pred) * HOSPITAL_SCALE_FACTOR * demand_shock_multiplier(bt, date, day_index=i, scenario=scenario))),
             }
-            for date, pred in zip(future_dates, preds)
+            for i, (date, pred) in enumerate(zip(future_dates, preds))
         ]
     return results
 
 
-def predict_supply(days=30):
+def predict_supply(days=30, scenario="default"):
     """
     Predicts blood supply/donations for the next 'days' using Prophet.
     Returns predictions broken down by blood type.
@@ -96,11 +96,11 @@ def predict_supply(days=30):
         recent_forecast = forecast[['ds', 'yhat']].tail(days)
 
         preds = []
-        for _, row in recent_forecast.iterrows():
+        for i, (_, row) in enumerate(recent_forecast.iterrows()):
             date_obj = row['ds']
             preds.append({
                 "date": date_obj.strftime('%Y-%m-%d'),
-                "predicted_supply": max(0, round(float(row['yhat']) * HOSPITAL_SCALE_FACTOR * supply_shock_multiplier(bt, date_obj)))
+                "predicted_supply": max(0, round(float(row['yhat']) * HOSPITAL_SCALE_FACTOR * supply_shock_multiplier(bt, date_obj, day_index=i, scenario=scenario)))
             })
         results[bt.upper()] = preds
 

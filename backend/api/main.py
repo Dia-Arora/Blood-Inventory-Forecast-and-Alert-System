@@ -5,6 +5,7 @@ from ml.train_demand import train as train_demand_model
 from ml.train_supply import train as train_supply_model
 from ml.backtest import run_backtest
 from simulation.engine import run_simulation
+from simulation.scenarios import SCENARIOS, list_scenarios
 import logging
 
 app = FastAPI(title="BloodIQ AI Intelligence Engine")
@@ -40,11 +41,17 @@ def get_supply_forecast(days: int = 30):
         logging.error(f"Supply Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/scenarios")
+def get_scenarios():
+    return {"status": "success", "data": list_scenarios()}
+
 @app.get("/api/simulate")
-def simulate(days: int = 30):
+def simulate(days: int = 30, scenario: str = "default"):
+    if scenario not in SCENARIOS:
+        raise HTTPException(status_code=400, detail=f"Unknown scenario '{scenario}'")
     try:
-        demand_by_type = predict_demand_by_type(days)
-        supply_by_type = predict_supply(days)
+        demand_by_type = predict_demand_by_type(days, scenario=scenario)
+        supply_by_type = predict_supply(days, scenario=scenario)
         result = run_simulation(demand_by_type, supply_by_type, days)
         return {"status": "success", "data": result}
     except Exception as e:

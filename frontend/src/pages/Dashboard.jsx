@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Clock, RefreshCcw, Droplet, AlertTriangle, Calendar, TrendingUp, TrendingDown, Play, Pause, SkipForward } from 'lucide-react';
-import { fetchSimulation } from '../lib/api';
+import { Clock, RefreshCcw, Droplet, AlertTriangle, Calendar, TrendingUp, TrendingDown, Play, Pause, SkipForward, Zap } from 'lucide-react';
+import { fetchSimulation, fetchScenarios } from '../lib/api';
 import HealthBarCard from '../components/HealthBarCard';
 import AlertStream from '../components/AlertStream';
 
@@ -13,17 +13,23 @@ export default function Dashboard() {
   const [dayIndex, setDayIndex] = useState(0);
   const [autoPlay, setAutoPlay] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [scenarios, setScenarios] = useState([]);
+  const [scenario, setScenario] = useState('default');
+
+  useEffect(() => {
+    fetchScenarios().then(setScenarios).catch(() => {});
+  }, []);
 
   const loadSimulation = useCallback(() => {
     setError(null);
-    fetchSimulation(SIM_DAYS)
+    fetchSimulation(SIM_DAYS, scenario)
       .then(data => {
         setSimulateData(data);
         setDayIndex(0);
         setLastRefresh(new Date());
       })
       .catch(err => setError(err.message));
-  }, []);
+  }, [scenario]);
 
   useEffect(() => { loadSimulation(); }, [loadSimulation]);
 
@@ -74,6 +80,15 @@ export default function Dashboard() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <select
+            value={scenario}
+            onChange={(e) => setScenario(e.target.value)}
+            className="text-[13px] font-normal bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg hover:border-rose-300 transition-colors cursor-pointer"
+          >
+            {scenarios.map(s => (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            ))}
+          </select>
           <button
             onClick={() => setAutoPlay(p => !p)}
             className="flex items-center gap-1.5 text-[13px] font-normal bg-rose-500 text-white px-3 py-1.5 rounded-lg hover:bg-rose-600 transition-colors"
@@ -96,6 +111,8 @@ export default function Dashboard() {
       </div>
 
       <div className="max-w-[1440px] mx-auto p-6 grid grid-cols-12 gap-5">
+        <ScenarioBanner scenarios={scenarios} scenario={scenario} />
+
         <div className="col-span-12 grid grid-cols-2 md:grid-cols-4 gap-4">
           <KPI title="Total Stock" value={Math.round(totalStock)} unit="units" icon={<Droplet className="w-4 h-4 text-rose-400" />} trend="live" up />
           <KPI title="Critical Shortages" value={criticalCount} unit="blood types" icon={<AlertTriangle className="w-4 h-4 text-rose-500" />} trend={criticalCount > 0 ? 'action needed' : 'all clear'} up={criticalCount === 0} color={criticalCount > 0 ? 'text-rose-600' : 'text-emerald-600'} />
@@ -119,6 +136,41 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function formatShock(shock) {
+  if (!shock) return 'Unaffected (default random behavior)';
+  const from = shock.start_day + 1;
+  const to = shock.end_day;
+  const dayLabel = from === to ? `day ${from}` : `days ${from}–${to}`;
+  return `${shock.min.toFixed(2)}x – ${shock.max.toFixed(2)}x, ${dayLabel}`;
+}
+
+function ScenarioBanner({ scenarios, scenario }) {
+  if (scenario === 'default') return null;
+  const active = scenarios.find(s => s.key === scenario);
+  if (!active) return null;
+
+  return (
+    <div className="col-span-12 bg-amber-50/60 border border-amber-200/70 rounded-2xl p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Zap className="w-4 h-4 text-amber-500" />
+        <span className="font-outfit text-[15px] font-normal text-gray-900">{active.label}</span>
+      </div>
+      <p className="font-sans text-[13px] text-gray-600 leading-relaxed">{active.description}</p>
+      <div className="flex flex-wrap gap-4">
+        <div className="text-[12px] font-normal text-gray-700 bg-white border border-amber-200/60 px-3 py-1.5 rounded-lg">
+          <span className="text-gray-400">Demand shock: </span>{formatShock(active.demand_shock)}
+        </div>
+        <div className="text-[12px] font-normal text-gray-700 bg-white border border-amber-200/60 px-3 py-1.5 rounded-lg">
+          <span className="text-gray-400">Supply shock: </span>{formatShock(active.supply_shock)}
+        </div>
+      </div>
+      {active.source && (
+        <p className="font-sans text-[11px] text-gray-400 leading-relaxed italic">{active.source}</p>
+      )}
     </div>
   );
 }

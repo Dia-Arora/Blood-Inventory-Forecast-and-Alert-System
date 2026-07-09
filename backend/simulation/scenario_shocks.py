@@ -13,10 +13,20 @@ Deterministic: every (blood_type, date) pair always produces the same
 shock. Uses a stable SHA-256-based seed rather than Python's built-in
 hash(), which is randomized per-process and would silently break
 determinism across server restarts.
+
+Named scenarios (see simulation/scenarios.py) can override this default
+random behavior for specific day windows of the simulation -- e.g. "the
+first two simulated days see a guaranteed demand surge" -- instead of the
+always-on random chance. When a scenario has no override for a given day
+(including the "default" scenario, which never overrides anything), the
+exact original random logic runs unchanged, so existing behavior and tests
+are unaffected by this parameter's existence.
 """
 import hashlib
 
 import numpy as np
+
+from simulation.scenarios import SCENARIOS
 
 
 def _seeded_rng(*parts):
@@ -25,14 +35,37 @@ def _seeded_rng(*parts):
     return np.random.default_rng(seed)
 
 
-def demand_shock_multiplier(blood_type, date):
+def _scenario_override(scenario, side, day_index):
+    if day_index is None:
+        return None
+    config = SCENARIOS.get(scenario)
+    if not config:
+        return None
+    windows = config.get(f"{side}_override")
+    if not windows:
+        return None
+    for window in windows:
+        if window["start_day"] <= day_index < window["end_day"]:
+            return window["range"]
+    return None
+
+
+def demand_shock_multiplier(blood_type, date, day_index=None, scenario="default"):
     """
     Daily jitter (+/- ~15%) plus occasional multi-day demand surges
     (~6% of weeks, 1.8-2.6x) representing trauma clusters or local
-    outbreaks that no calendar-based forecast could have predicted.
+    outbreaks that no calendar-based forecast could have predicted --
+    unless `scenario` overrides this day with a preset multiplier.
     """
-    daily_rng = _seeded_rng(blood_type, date.strftime("%Y-%m-%d"), "demand-daily")
+    date_str = date.strftime("%Y-%m-%d")
+    daily_rng = _seeded_rng(blood_type, date_str, "demand-daily")
     daily_noise = daily_rng.normal(0, 0.15)
+
+    override_range = _scenario_override(scenario, "demand", day_index)
+    if override_range is not None:
+        override_rng = _seeded_rng(blood_type, date_str, scenario, "demand-scenario")
+        mult = override_rng.uniform(*override_range)
+        return max(0.1, (1 + daily_noise) * mult)
 
     iso_year, iso_week, _ = date.isocalendar()
     week_rng = _seeded_rng(blood_type, iso_year, iso_week, "demand-surge")
@@ -42,15 +75,23 @@ def demand_shock_multiplier(blood_type, date):
     return max(0.1, (1 + daily_noise) * surge_mult)
 
 
-def supply_shock_multiplier(blood_type, date):
+def supply_shock_multiplier(blood_type, date, day_index=None, scenario="default"):
     """
     Daily jitter (+/- ~15%) plus occasional multi-day supply swings:
     ~5% of weeks are a donation shortfall (0.4-0.6x, e.g. holidays or bad
     weather suppressing turnout), ~5% are a donation-drive glut
-    (1.6-2.2x) that can outpace demand enough to risk wastage.
+    (1.6-2.2x) that can outpace demand enough to risk wastage -- unless
+    `scenario` overrides this day with a preset multiplier.
     """
-    daily_rng = _seeded_rng(blood_type, date.strftime("%Y-%m-%d"), "supply-daily")
+    date_str = date.strftime("%Y-%m-%d")
+    daily_rng = _seeded_rng(blood_type, date_str, "supply-daily")
     daily_noise = daily_rng.normal(0, 0.15)
+
+    override_range = _scenario_override(scenario, "supply", day_index)
+    if override_range is not None:
+        override_rng = _seeded_rng(blood_type, date_str, scenario, "supply-scenario")
+        mult = override_rng.uniform(*override_range)
+        return max(0.1, (1 + daily_noise) * mult)
 
     iso_year, iso_week, _ = date.isocalendar()
     week_rng = _seeded_rng(blood_type, iso_year, iso_week, "supply-swing")

@@ -10,7 +10,7 @@ def test_predict_demand_by_type_returns_all_four_types(monkeypatch):
     monkeypatch.setattr(inference, "get_demand_models", lambda: fake_models)
     # Isolate this test from the scenario-shock layer (tested separately
     # below) so it only verifies shape/structure, not shock arithmetic.
-    monkeypatch.setattr(inference, "demand_shock_multiplier", lambda bt, date: 1.0)
+    monkeypatch.setattr(inference, "demand_shock_multiplier", lambda bt, date, day_index=None, scenario="default": 1.0)
 
     result = inference.predict_demand_by_type(days=3)
 
@@ -28,7 +28,7 @@ def test_predict_demand_by_type_scales_national_predictions_down(monkeypatch):
             return [670.0] * len(X)
 
     monkeypatch.setattr(inference, "get_demand_models", lambda: {"o": FakeModel()})
-    monkeypatch.setattr(inference, "demand_shock_multiplier", lambda bt, date: 1.0)
+    monkeypatch.setattr(inference, "demand_shock_multiplier", lambda bt, date, day_index=None, scenario="default": 1.0)
 
     result = inference.predict_demand_by_type(days=1)
 
@@ -46,7 +46,7 @@ def test_predict_demand_by_type_applies_the_scenario_shock_multiplier(monkeypatc
     monkeypatch.setattr(inference, "get_demand_models", lambda: {"o": FakeModel()})
     # A fixed 2x shock, independent of blood type/date, isolates the
     # shock-application arithmetic from the real (random) shock function.
-    monkeypatch.setattr(inference, "demand_shock_multiplier", lambda bt, date: 2.0)
+    monkeypatch.setattr(inference, "demand_shock_multiplier", lambda bt, date, day_index=None, scenario="default": 2.0)
 
     result = inference.predict_demand_by_type(days=1)
 
